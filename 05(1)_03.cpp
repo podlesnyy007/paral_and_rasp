@@ -1,74 +1,117 @@
 #include <iostream>
 #include <cmath>
-#include <omp.h>
-#include <chrono>
+#include <omp.h> // Библиотека OpenMP для параллельных вычислений
+#include <chrono> // Библиотека для работы с временем
 
 const int N = 100; // Количество точек по каждой оси
-const double h = 1.0 / N; // Шаг сетки
+const double h = 1.0 / N; // Шаг
 
-// Определяем функцию f(x, y, z)
+// Функция f(x, y, z)
 double f(double x, double y, double z) {
     return 0.5 + sin(x * x + y * y) * cos(z);
 }
 
-// Функция для вычисления среднего значения с заданной стратегией
-double compute_average(int schedule_type) {
-    double sum = 0.0; // Переменная для хранения суммы значений функции
-    int count = 0; // Счетчик точек
+// Функция для последовательного вычисления
+double sequential_computation() {
+    double A = 0.0;
+    for (int i = 0; i < N; ++i) {
+        for (int j = 0; j < N; ++j) {
+            for (int k = 0; k < N; ++k) {
+                double x = h * (i + 0.5);
+                double y = h * (j + 0.5);
+                double z = h * (k + 0.5);
+                A += f(x, y, z); // Вызываем функцию f и добавляем результат к A
+            }
+        }
+    }
+    return A * h * h * h; // Умножаем на объем (h^3)
+}
 
-    // Параллельный цикл с редукцией для суммирования значений
-#pragma omp parallel for reduction(+:sum, count) schedule(static)
-    for (int i = 0; i <= N; ++i) {
-        double x = h * i; // Вычисляем координату x
-        for (int j = 0; j <= N - i; ++j) {
-            double y = h * j; // Вычисляем координату y
-            double max_z = sqrt((N - i) * (N - i) - j * j); // Максимальное значение z для текущих x и y
-            for (int k = -static_cast<int>(max_z); k <= static_cast<int>(max_z); ++k) {
-                double z = h * k; // Вычисляем координату z
-                sum += f(x, y, z); // Добавляем значение функции к сумме
-                count++; // Увеличиваем счетчик
+// Функция для параллельного вычисления с разными стратегиями
+double parallel_computation(const char* schedule_type) {
+    double A = 0.0;
+
+    // Параллельный цикл с редукцией для суммирования значений A
+    if (strcmp(schedule_type, "default") == 0) {
+#pragma omp parallel for reduction(+:A)
+        for (int i = 0; i < N; ++i) {
+            for (int j = 0; j < N; ++j) {
+                for (int k = 0; k < N; ++k) {
+                    double x = h * (i + 0.5);
+                    double y = h * (j + 0.5);
+                    double z = h * (k + 0.5);
+                    A += f(x, y, z);
+                }
+            }
+        }
+    }
+    else if (strcmp(schedule_type, "static") == 0) {
+#pragma omp parallel for reduction(+:A) schedule(static)
+        for (int i = 0; i < N; ++i) {
+            for (int j = 0; j < N; ++j) {
+                for (int k = 0; k < N; ++k) {
+                    double x = h * (i + 0.5);
+                    double y = h * (j + 0.5);
+                    double z = h * (k + 0.5);
+                    A += f(x, y, z);
+                }
+            }
+        }
+    }
+    else if (strcmp(schedule_type, "dynamic") == 0) {
+#pragma omp parallel for reduction(+:A) schedule(dynamic)
+        for (int i = 0; i < N; ++i) {
+            for (int j = 0; j < N; ++j) {
+                for (int k = 0; k < N; ++k) {
+                    double x = h * (i + 0.5);
+                    double y = h * (j + 0.5);
+                    double z = h * (k + 0.5);
+                    A += f(x, y, z);
+                }
             }
         }
     }
 
-    return sum / count; // Возвращаем среднее значение
+    return A * h * h * h; // Умножаем на объем
 }
 
 int main() {
     setlocale(LC_ALL, "Rus");
 
-    double results[3]; // Массив для хранения результатов
+    // Измеряем время последовательного вычисления
+    auto start_seq = std::chrono::high_resolution_clock::now(); // Запоминаем время начала
+    double sequential_result = sequential_computation(); // Выполняем последовательные вычисления
+    auto end_seq = std::chrono::high_resolution_clock::now(); // Запоминаем время окончания
+    std::chrono::duration<double> seq_duration = end_seq - start_seq; // Вычисляем продолжительность
 
-    // Измеряем время выполнения с балансировкой нагрузки по умолчанию
-    auto start_default = std::chrono::high_resolution_clock::now();
-    results[0] = compute_average(0); // Вызов функции с настройкой по умолчанию
-    auto end_default = std::chrono::high_resolution_clock::now();
-    std::chrono::duration<double> default_duration = end_default - start_default;
+    // Измеряем время параллельного вычисления по умолчанию
+    auto start_par_default = std::chrono::high_resolution_clock::now();
+    double parallel_result_default = parallel_computation("default");
+    auto end_par_default = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double> par_default_duration = end_par_default - start_par_default;
 
-    // Измеряем время выполнения с статической балансировкой нагрузки
-    auto start_static = std::chrono::high_resolution_clock::now();
-    results[1] = compute_average(1); // Вызов функции с статической настройкой
-    auto end_static = std::chrono::high_resolution_clock::now();
-    std::chrono::duration<double> static_duration = end_static - start_static;
+    // Измеряем время параллельного вычисления статически
+    auto start_par_static = std::chrono::high_resolution_clock::now();
+    double parallel_result_static = parallel_computation("static");
+    auto end_par_static = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double> par_static_duration = end_par_static - start_par_static;
 
-    // Измеряем время выполнения с динамической балансировкой нагрузки
-    auto start_dynamic = std::chrono::high_resolution_clock::now();
-    results[2] = compute_average(2); // Вызов функции с динамической настройкой
-    auto end_dynamic = std::chrono::high_resolution_clock::now();
-    std::chrono::duration<double> dynamic_duration = end_dynamic - start_dynamic;
+    // Измеряем время параллельного вычисления динамически
+    auto start_par_dynamic = std::chrono::high_resolution_clock::now();
+    double parallel_result_dynamic = parallel_computation("dynamic");
+    auto end_par_dynamic = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double> par_dynamic_duration = end_par_dynamic - start_par_dynamic;
 
-    // Вывод результатов на экран
-    std::cout << "Результат расписания по умолчанию: " << results[0] << ", Время: " << default_duration.count() << " секунды\n";
-    std::cout << "Результат статического расписания: " << results[1] << ", Время: " << static_duration.count() << " секунды\n";
-    std::cout << "Результат динамического расписания: " << results[2] << ", Время: " << dynamic_duration.count() << " секунды\n";
+    // Вычисляем ускорение
+    double speedup_default = seq_duration.count() / par_default_duration.count();
+    double speedup_static = seq_duration.count() / par_static_duration.count();
+    double speedup_dynamic = seq_duration.count() / par_dynamic_duration.count();
 
-    // Вычисляем ускорения
-    double speedup_static = default_duration.count() / static_duration.count();
-    double speedup_dynamic = default_duration.count() / dynamic_duration.count();
-
-    // Вывод ускорений на экран
-    std::cout << "Ускорение (статическое): " << speedup_static << "\n";
-    std::cout << "Ускорение (динамическое): " << speedup_dynamic << "\n";
+    // Вывод результатов
+    std::cout << "Последовательный результат: " << sequential_result << ", Время: " << seq_duration.count() << " секунды\n";
+    std::cout << "Параллельный результат (по умолчанию) " << parallel_result_default << ", Время: " << par_default_duration.count() << " секунды, Ускорение: " << speedup_default << "\n";
+    std::cout << "Параллельный результат (статический):  " << parallel_result_static << ", Время: " << par_static_duration.count() << " секунды, Ускорение: " << speedup_static << "\n";
+    std::cout << "Параллельный результат (динамический): " << parallel_result_dynamic << ", Время: " << par_dynamic_duration.count() << " секунды, Ускорение " << speedup_dynamic << "\n";
 
     return 0;
 }
